@@ -281,7 +281,7 @@ def test(cfg_file,
             logger.info("Translations saved to: %s", output_path_set)
 
 
-def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
+def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False) -> None:
     """
     Interactive translation function.
     Loads model from checkpoint and translates either the stdin input or
@@ -381,7 +381,34 @@ def translate(cfg_file, ckpt: str, output_path: str = None) -> None:
         beam_size = 1
         beam_alpha = -1
 
-    if not sys.stdin.isatty():
+    # Slave mode
+    if sm:
+        # Letting the master know that JoeyNMT is ready
+        print("!:SLAVE_READY")
+        sys.stdout.flush()
+        try:
+            while True:
+                src_input = input()
+                if not src_input.strip():
+                    # If input is not correct, issue error
+                    print("!:SLAVE_ERROR")
+                    sys.stdout.flush()
+
+                # Master send a signal for JoeyNMT to stop
+                if src_input.strip() == "!:SLAVE_STOP":
+                    break
+
+                # every line has to be made into dataset
+                test_data = _load_line_as_data(line=src_input)
+
+                hypotheses = _translate_data(test_data)
+                print(hypotheses[0])
+                sys.stdout.flush()
+        except KeyboardInterrupt:
+            print("!:SLAVE_END")
+            sys.stdout.flush()
+
+    elif not sys.stdin.isatty():
         # input file given
         test_data = MonoDataset(path=sys.stdin, ext="", field=src_field)
         hypotheses = _translate_data(test_data)

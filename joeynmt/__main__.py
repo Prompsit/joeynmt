@@ -23,6 +23,9 @@ def main():
     ap.add_argument("--save_attention", action="store_true",
                     help="save attention visualizations")
 
+    ap.add_argument("-sm", "--slave_and_master", action="store_true",
+                    help="run in slave mode")
+
     args = ap.parse_args()
 
     if args.mode == "train":
@@ -32,7 +35,7 @@ def main():
              output_path=args.output_path, save_attention=args.save_attention)
     elif args.mode == "translate":
         translate(cfg_file=args.config_path, ckpt=args.ckpt,
-                  output_path=args.output_path)
+                  output_path=args.output_path, sm=args.slave_and_master)
     else:
         raise ValueError("Unknown mode")
 
