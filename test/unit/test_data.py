@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from joeynmt.data import MonoDataset, TranslationDataset, load_data, \
+from joeynmt.data import MonoDataset, TranslationDataset, LazyDataset, load_data, \
     make_data_iter
 
 class TestData(unittest.TestCase):
@@ -62,7 +62,7 @@ class TestData(unittest.TestCase):
                     train_data, dev_data, test_data, src_vocab, trg_vocab = \
                         load_data(current_cfg)
 
-                    self.assertIs(type(train_data), TranslationDataset)
+                    self.assertIs(type(train_data), LazyDataset)
                     self.assertIs(type(dev_data), TranslationDataset)
                     if test_path is not None:
                         # test has no target side

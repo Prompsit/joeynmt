@@ -15,6 +15,91 @@ from torchtext.data import Dataset, Iterator, Field
 from joeynmt.constants import UNK_TOKEN, EOS_TOKEN, BOS_TOKEN, PAD_TOKEN
 from joeynmt.vocabulary import build_vocab, Vocabulary
 
+class LazyDataset(TranslationDataset):
+    """
+    Provides a way of loading examples directly from disk, instead
+    of keeping them on memory.
+    """
+    
+    class ExamplesWrapper(object):
+        """
+        Class used to replace the examples list present on TranslationDataset with an
+        object which acts as a generator and takes into account filter predicates.
+        """
+
+        def __init__(self, dataset):
+            self.dataset = dataset
+            self.invalid_lines = {}
+            self.len = 0
+
+            """
+            Files are explored before execution so that checking
+            filter_pred everytime we __iter__, __getitem__ or __len__ is not necessary.
+            This makes initialisation slower but execution faster
+            """
+            with open(self.dataset.src_path, 'r') as src_file, open(self.dataset.trg_path, 'r') as trg_file:
+                for i, (src_line, trg_line) in enumerate(zip(src_file, trg_file)):
+                    srcs = src_line.strip()
+                    trgs = trg_line.strip()
+                    if srcs != '' and trgs != '':
+                        example = data.Example.fromlist([srcs, trgs], self.dataset.tfields)
+                        if self.dataset.filter_pred:
+                            if not self.dataset.filter_pred(example):
+                                self.invalid_lines[i] = True
+                            else:
+                                self.len = self.len + 1
+                        else:
+                            self.len = self.len + 1
+                    else:
+                        self.invalid_lines[i] = True
+
+        def __iter__(self):
+            """
+            Generator which yields examples if they are valid, taking into account
+            the previously generated list of invalid lines
+            """
+            with open(self.dataset.src_path, 'r') as src_file, open(self.dataset.trg_path, 'r') as trg_file:
+                for i, (src_line, trg_line) in enumerate(zip(src_file, trg_file)):
+                    try:
+                        if self.invalid_lines[i]: pass
+                    except KeyError:
+                        yield data.Example.fromlist([src_line.strip(), trg_line.strip()], self.dataset.tfields)
+
+        def __getitem__(self, idx):
+            line = 0
+            with open(self.dataset.src_path, 'r') as src_file, open(self.dataset.trg_path, 'r') as trg_file:
+                for i, (src_line, trg_line) in enumerate(zip(src_file, trg_file)):
+                    try:
+                        if self.invalid_lines[i]: pass
+                    except KeyError:
+                        if line == idx:
+                            return data.Example.fromlist([src_line.strip(), trg_line.strip()], self.dataset.tfields)
+                        line = line + 1
+    
+        def __len__(self):
+            return self.len
+
+    def __init__(self, path, exts, fields, **kwargs):
+        if not isinstance(fields[0], (tuple, list)):
+            self.tfields = [('src', fields[0]), ('trg', fields[1])]
+        else:
+            self.tfields = fields
+
+        self.fields = dict(self.tfields)
+        self.src_path, self.trg_path = tuple(os.path.expanduser(path + x) for x in exts)
+
+        if "filter_pred" in kwargs.keys():
+            self.filter_pred = kwargs['filter_pred']
+
+        self.examples = self.ExamplesWrapper(self)
+
+    def __getattr__(self, attr):
+        if attr in self.fields:
+            for example in self.__iter__():
+                yield getattr(example, attr)
+
+    def __len__(self):
+        return len(self.examples)
 
 def load_data(data_cfg: dict) -> (Dataset, Dataset, Optional[Dataset],
                                   Vocabulary, Vocabulary):
@@ -63,7 +148,7 @@ def load_data(data_cfg: dict) -> (Dataset, Dataset, Optional[Dataset],
                            batch_first=True, lower=lowercase,
                            include_lengths=True)
 
-    train_data = TranslationDataset(path=train_path,
+    train_data = LazyDataset(path=train_path,
                                     exts=("." + src_lang, "." + trg_lang),
                                     fields=(src_field, trg_field),
                                     filter_pred=
