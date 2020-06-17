@@ -410,10 +410,9 @@ def beam_search(
         return filled
 
     # from results to stacked outputs
-    assert n_best == 1
+    # assert n_best == 1
     # only works for n_best=1 for now
-    final_outputs = pad_and_stack_hyps([r[0].cpu().numpy() for r in
-                                        results["predictions"]],
+    final_outputs = pad_and_stack_hyps([u.cpu().numpy() for u in results["predictions"][0]],
                                        pad_value=pad_index)
 
     return final_outputs, None

@@ -141,7 +141,7 @@ class Model(nn.Module):
         return batch_loss
 
     def run_batch(self, batch: Batch, max_output_length: int, beam_size: int,
-                  beam_alpha: float) -> (np.array, np.array):
+                  beam_alpha: float, n_best: int = 1) -> (np.array, np.array):
         """
         Get outputs and attentions scores for a given batch
 
@@ -179,7 +179,8 @@ class Model(nn.Module):
                         alpha=beam_alpha, eos_index=self.eos_index,
                         pad_index=self.pad_index,
                         bos_index=self.bos_index,
-                        decoder=self.decoder)
+                        decoder=self.decoder,
+                        n_best=n_best)
 
         return stacked_output, stacked_attention_scores
 

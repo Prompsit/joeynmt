@@ -29,7 +29,8 @@ def validate_on_data(model: Model, data: Dataset,
                      level: str, eval_metric: Optional[str],
                      loss_function: torch.nn.Module = None,
                      beam_size: int = 1, beam_alpha: int = -1,
-                     batch_type: str = "sentence"
+                     batch_type: str = "sentence",
+                     n_best: int = 1
                      ) \
         -> (float, float, float, List[str], List[List[str]], List[str],
             List[str], List[List[str]], List[np.array]):
@@ -103,15 +104,19 @@ def validate_on_data(model: Model, data: Dataset,
             # run as during inference to produce translations
             output, attention_scores = model.run_batch(
                 batch=batch, beam_size=beam_size, beam_alpha=beam_alpha,
-                max_output_length=max_output_length)
+                max_output_length=max_output_length, n_best=n_best)
 
             # sort outputs back to original order
-            all_outputs.extend(output[sort_reverse_index])
-            valid_attention_scores.extend(
-                attention_scores[sort_reverse_index]
-                if attention_scores is not None else [])
+            if n_best == 1:
+                all_outputs.extend(output[sort_reverse_index])
+                valid_attention_scores.extend(attention_scores[sort_reverse_index] if attention_scores is not None else [])
+            else:
+                all_outputs.extend(output)
+                valid_attention_scores.extend(
+                    attention_scores
+                    if attention_scores is not None else [])
 
-        assert len(all_outputs) == len(data)
+        # assert len(all_outputs) == len(data)
 
         if loss_function is not None and total_ntokens > 0:
             # total validation loss
@@ -281,7 +286,7 @@ def test(cfg_file,
             logger.info("Translations saved to: %s", output_path_set)
 
 
-def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False) -> None:
+def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False, n_best: int = 1) -> None:
     """
     Interactive translation function.
     Loads model from checkpoint and translates either the stdin input or
@@ -324,7 +329,8 @@ def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False) ->
             batch_type=batch_type, level=level,
             max_output_length=max_output_length, eval_metric="",
             use_cuda=use_cuda, loss_function=None, beam_size=beam_size,
-            beam_alpha=beam_alpha, logger=logger)
+            beam_alpha=beam_alpha, logger=logger, n_best=n_best)
+
         return hypotheses
 
     cfg = load_config(cfg_file)
@@ -381,31 +387,29 @@ def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False) ->
         beam_size = 1
         beam_alpha = -1
 
-    # Slave mode
     if sm:
-        # Letting the master know that JoeyNMT is ready
         print("!:SLAVE_READY")
         sys.stdout.flush()
-        try:
-            while True:
-                src_input = input()
-                if not src_input.strip():
-                    # If input is not correct, issue error
-                    print("!:SLAVE_ERROR")
-                    sys.stdout.flush()
+        while True:
+            src_input = input()
 
-                # Master send a signal for JoeyNMT to stop
-                if src_input.strip() == "!:SLAVE_STOP":
-                    break
-
-                # every line has to be made into dataset
-                test_data = _load_line_as_data(line=src_input)
-
-                hypotheses = _translate_data(test_data)
-                print(hypotheses[0])
+            if not src_input.strip():
+                print("!:SLAVE_ERROR")
                 sys.stdout.flush()
-        except KeyboardInterrupt:
-            print("!:SLAVE_END")
+
+            if src_input.strip() == "!:SLAVE_STOP":
+                break
+
+            # every line has to be made into dataset
+            test_data = _load_line_as_data(line=src_input)
+
+            hypotheses = _translate_data(test_data)
+            if n_best > 1:
+                for hyp in hypotheses:
+                    print(hyp)
+                print("!:SLAVE_END_NBEST")
+            else:
+                print(hypotheses[0] if len(hypotheses) > 0 else "")
             sys.stdout.flush()
 
     elif not sys.stdin.isatty():
@@ -424,7 +428,6 @@ def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False) ->
             # print to stdout
             for hyp in hypotheses:
                 print(hyp)
-
     else:
         # enter interactive mode
         batch_size = 1
@@ -432,7 +435,7 @@ def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False) ->
         while True:
             try:
                 src_input = input("\nPlease enter a source sentence "
-                                  "(pre-processed): \n")
+                                "(pre-processed): \n")
                 if not src_input.strip():
                     break
 
