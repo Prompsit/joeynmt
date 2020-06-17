@@ -287,6 +287,7 @@ class TrainManager:
 
         for epoch_no in range(self.epochs):
             self.logger.info("EPOCH %d", epoch_no + 1)
+            self.tb_writer.add_scalar("train/epoch", epoch_no + 1)
 
             if self.scheduler is not None and self.scheduler_step_at == "epoch":
                 self.scheduler.step(epoch=epoch_no)
@@ -330,6 +331,11 @@ class TrainManager:
                     self.tb_writer.add_scalar("train/train_batch_loss",
                                               batch_loss, self.steps)
 
+                    # Log learning rate to tensorflow
+                    self.tb_writer.add_scalar("train/train_learning_rate",
+                                              self.optimizer.param_groups[0]["lr"],
+                                              self.steps)
+
                 count = self.batch_multiplier if update else count
                 count -= 1
 
@@ -351,9 +357,12 @@ class TrainManager:
                         epoch_no + 1, self.steps, batch_loss,
                         elapsed_tokens / elapsed,
                         self.optimizer.param_groups[0]["lr"])
+
                     start = time.time()
                     total_valid_duration = 0
                     start_tokens = self.total_tokens
+
+                    self.tb_writer.add_scalar("train/learning_rate", self.optimizer.param_groups[0]["lr"], self.steps)
 
                 # validate on the entire dev set
                 if self.steps % self.validation_freq == 0 and update:
@@ -458,6 +467,8 @@ class TrainManager:
                          '%8d: %6.2f %s.', self.best_ckpt_iteration,
                          self.best_ckpt_score,
                          self.early_stopping_metric)
+
+        self.tb_writer.add_scalar("train/done", 1)
 
         self.tb_writer.close()  # close Tensorboard writer
 
@@ -651,10 +662,10 @@ def train(cfg_file: str) -> None:
 
     # predict with the best model on validation and test
     # (if test data is available)
-    ckpt = "{}/{}.ckpt".format(trainer.model_dir, trainer.best_ckpt_iteration)
-    output_name = "{:08d}.hyps".format(trainer.best_ckpt_iteration)
-    output_path = os.path.join(trainer.model_dir, output_name)
-    test(cfg_file, ckpt=ckpt, output_path=output_path, logger=trainer.logger)
+    # ckpt = "{}/{}.ckpt".format(trainer.model_dir, trainer.best_ckpt_iteration)
+    # output_name = "{:08d}.hyps".format(trainer.best_ckpt_iteration)
+    # output_path = os.path.join(trainer.model_dir, output_name)
+    # test(cfg_file, ckpt=ckpt, output_path=output_path, logger=trainer.logger)
 
 
 if __name__ == "__main__":
