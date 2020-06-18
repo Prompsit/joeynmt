@@ -391,7 +391,10 @@ def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False, n_
         print("!:SLAVE_READY")
         sys.stdout.flush()
         while True:
-            src_input = input()
+            try:
+                src_input = input()
+            except EOFError:
+                break
 
             if not src_input.strip():
                 print("!:SLAVE_ERROR")
