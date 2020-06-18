@@ -79,6 +79,7 @@ def validate_on_data(model: Model, data: Dataset,
     pad_index = model.src_vocab.stoi[PAD_TOKEN]
     # disable dropout
     model.eval()
+
     # don't track gradients during validation
     with torch.no_grad():
         all_outputs = []
@@ -107,14 +108,14 @@ def validate_on_data(model: Model, data: Dataset,
                 max_output_length=max_output_length, n_best=n_best)
 
             # sort outputs back to original order
-            if n_best == 1:
-                all_outputs.extend(output[sort_reverse_index])
-                valid_attention_scores.extend(attention_scores[sort_reverse_index] if attention_scores is not None else [])
-            else:
-                all_outputs.extend(output)
-                valid_attention_scores.extend(
-                    attention_scores
-                    if attention_scores is not None else [])
+            all_outputs.extend(output[sort_reverse_index])
+            valid_attention_scores.extend(attention_scores[sort_reverse_index] if attention_scores is not None else [])
+            
+            if n_best > 1:
+                for i in range(len(output)):
+                    if i not in sort_reverse_index:
+                        all_outputs.extend(output[[i]])
+                        valid_attention_scores.extend(attention_scores[[i]] if attention_scores is not None else [])
 
         # assert len(all_outputs) == len(data)
 
