@@ -30,7 +30,8 @@ def validate_on_data(model: Model, data: Dataset,
                      loss_function: torch.nn.Module = None,
                      beam_size: int = 1, beam_alpha: int = -1,
                      batch_type: str = "sentence",
-                     n_best: int = 1
+                     n_best: int = 1,
+                     cuda_device: int = None
                      ) \
         -> (float, float, float, List[str], List[List[str]], List[str],
             List[str], List[List[str]], List[np.array]):
@@ -79,6 +80,7 @@ def validate_on_data(model: Model, data: Dataset,
     pad_index = model.src_vocab.stoi[PAD_TOKEN]
     # disable dropout
     model.eval()
+
     # don't track gradients during validation
     with torch.no_grad():
         all_outputs = []
@@ -89,9 +91,12 @@ def validate_on_data(model: Model, data: Dataset,
         for valid_batch in iter(valid_iter):
             # run as during training to get validation loss (e.g. xent)
 
-            batch = Batch(valid_batch, pad_index, use_cuda=use_cuda)
+            batch = Batch(valid_batch, pad_index, use_cuda=use_cuda, cuda_device=cuda_device)
             # sort batch now by src length and keep track of order
-            sort_reverse_index = batch.sort_by_src_lengths()
+            sort_reverse_index = []
+            for ix in batch.sort_by_src_lengths():
+                for n in range(0, n_best):
+                    sort_reverse_index.append(ix + n)
 
             # run as during training with teacher forcing
             if loss_function is not None and batch.trg is not None:
@@ -107,14 +112,14 @@ def validate_on_data(model: Model, data: Dataset,
                 max_output_length=max_output_length, n_best=n_best)
 
             # sort outputs back to original order
-            if n_best == 1:
-                all_outputs.extend(output[sort_reverse_index])
-                valid_attention_scores.extend(attention_scores[sort_reverse_index] if attention_scores is not None else [])
-            else:
-                all_outputs.extend(output)
-                valid_attention_scores.extend(
-                    attention_scores
-                    if attention_scores is not None else [])
+            all_outputs.extend(output[sort_reverse_index])
+            valid_attention_scores.extend(attention_scores[sort_reverse_index] if attention_scores is not None else [])
+            
+            if n_best > 1:
+                for i in range(len(output)):
+                    if i not in sort_reverse_index:
+                        all_outputs.extend(output[[i]])
+                        valid_attention_scores.extend(attention_scores[[i]] if attention_scores is not None else [])
 
         # assert len(all_outputs) == len(data)
 
@@ -391,7 +396,10 @@ def translate(cfg_file, ckpt: str, output_path: str = None, sm: bool = False, n_
         print("!:SLAVE_READY")
         sys.stdout.flush()
         while True:
-            src_input = input()
+            try:
+                src_input = input()
+            except EOFError:
+                break
 
             if not src_input.strip():
                 print("!:SLAVE_ERROR")
